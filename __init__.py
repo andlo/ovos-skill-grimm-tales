@@ -55,6 +55,15 @@ AUTHOR_NAME = "the Brothers Grimm"
 COLLECTION_NAME = "Grimm's Fairy Tales"
 SOURCE_NAME = "grimmstories.com"
 
+# grimmstories.com offers 20 languages total; we only support the ones
+# also part of OVOS's actively-tracked language set (see
+# andlo/ovos-skill-fairytales#31) - 7 shared with Andersen plus
+# Portuguese (Grimm-only, no Andersen stories exist in Portuguese). This
+# provider does NOT translate (unlike ovos-skill-ovosblog/
+# ovos-skill-arxiv-papers) - a device set to any other language gets no
+# response at all, decided once at load time (see initialize()).
+SUPPORTED_LANGUAGES = {"da", "en", "de", "es", "fr", "it", "nl", "pt"}
+
 
 class GrimmTales(OVOSSkill):
 
@@ -72,6 +81,16 @@ class GrimmTales(OVOSSkill):
         )
 
     def initialize(self):
+        lang = self.lang.split("-")[0]
+        if lang not in SUPPORTED_LANGUAGES:
+            self.log.info(
+                f"{self.skill_id}: device language '{self.lang}' is not one of "
+                f"{sorted(SUPPORTED_LANGUAGES)} that grimmstories.com supports, "
+                f"and this provider does not translate - skill will stay inert "
+                f"(no bus events registered, index not built)."
+            )
+            self.index = {}
+            return
         self.index = {}
         self._story_text_cache = {}
         self.refresh_index()
@@ -153,11 +172,8 @@ class GrimmTales(OVOSSkill):
         return index
 
     def update_index(self):
-        # grimmstories.com offers 20 languages total; we only support the
-        # ones that are also part of OVOS's actively-tracked language set
-        # (see andlo/ovos-skill-fairytales#31) - currently 7 shared with
-        # Andersen plus Portuguese (Grimm-only, no Andersen stories exist
-        # in Portuguese)
+        # initialize() already checked self.lang is in SUPPORTED_LANGUAGES
+        # before this is ever called, so no fallback is needed here.
         url_grimm = {'da': 'https://www.grimmstories.com/da/grimm_eventyr/',
                      'en': 'https://www.grimmstories.com/en/grimm_fairy-tales/',
                      'de': 'https://www.grimmstories.com/de/grimm_maerchen/',
@@ -167,8 +183,6 @@ class GrimmTales(OVOSSkill):
                      'nl': 'https://www.grimmstories.com/nl/grimm_sprookjes/',
                      'pt': 'https://www.grimmstories.com/pt/grimm_contos/'}
         lang = self.lang.split("-")[0]
-        if lang not in url_grimm:
-            lang = "en"
         self.index = self.get_index(url_grimm[lang] + "list")
 
     def _matches_collection_hint(self, hint):

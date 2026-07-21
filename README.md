@@ -23,14 +23,21 @@ pip install ovos-skill-grimm-tales ovos-common-reading-pipeline-plugin
 ## Languages
 
 Sourced live from [grimmstories.com](https://www.grimmstories.com/),
-which supports 8 languages here: EN, DA, DE, ES, FR, IT, NL, PT. Falls
-back to English for any other device language.
+which supports 8 languages here: EN, DA, DE, ES, FR, IT, NL, PT.
 
 Grimmstories.com actually offers 20 languages total - the other 12
 (FI, HU, VI, TR, PL, RO, RU, UK, EL, ZH, JA, KO) aren't included here yet
 since they fall outside [OVOS's actively-tracked language set](https://openvoiceos.github.io/lang-support-tracker/).
 Portuguese is Grimm-only among the 8 supported here - no equivalent
 Andersen source exists in Portuguese.
+
+**This provider does not translate.** On any other device language, it
+doesn't just decline to answer searches - it **never loads at all**:
+`initialize()` checks the device's language against `SUPPORTED_LANGUAGES`
+before building any index or registering any bus events, and logs a
+clear message if the language isn't supported, rather than silently
+serving English (or any other) content. Set your device to one of the 8
+supported languages to use this provider.
 
 ## Collection hints
 
