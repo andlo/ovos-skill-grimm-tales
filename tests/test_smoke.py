@@ -34,7 +34,7 @@ def test_initialize_loads_normally_for_supported_language(skill, monkeypatch):
     skill.initialize()
 
     skill.refresh_index.assert_called_once()
-    assert skill.add_event.call_count == 2
+    assert skill.add_event.call_count == 3
 
 
 def test_initialize_loads_normally_for_portuguese(skill, monkeypatch):
