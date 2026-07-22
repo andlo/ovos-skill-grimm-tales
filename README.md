@@ -39,11 +39,26 @@ clear message if the language isn't supported, rather than silently
 serving English (or any other) content. Set your device to one of the 8
 supported languages to use this provider.
 
+**Author/collection name and collection_hint aliases are also
+per-language**, not hardcoded English - "the Brothers Grimm" only makes
+sense to announce on an English device; a Danish device hears "Brødrene
+Grimm" instead, and a Danish user saying "brødrene grimm" as a
+collection_hint matches correctly (not just by luck, the way it would
+have if we'd only shipped English aliases). See
+`locale/<lang>/collection.voc` (aliases) and
+`locale/<lang>/collection_meta.json` (author/collection name), loaded
+via OVOS's own resource file resolution rather than Python constants -
+see [ovos-common-reading-pipeline-plugin#26](https://github.com/andlo/ovos-common-reading-pipeline-plugin/issues/26)
+for the full reasoning. This also means every supported language has
+its own `locale/<lang>/skill.json`, so the Skills Store can see this
+provider genuinely supports 8 languages, not just English.
+
 ## Collection hints
 
-Responds to `collection_hint` values like "grimm", "the brothers grimm",
-"brothers grimm", "grimm brothers", matched fuzzily (see
-`COLLECTION_ALIASES` in `__init__.py`).
+Responds to `collection_hint` values in the *device's own language* -
+e.g. "grimm"/"the brothers grimm" on English, "grimm"/"brødrene grimm"
+on Danish, "grimm"/"die gebrüder grimm" on German - matched fuzzily
+against that language's own alias list (see `locale/<lang>/collection.voc`).
 
 ## Content type
 

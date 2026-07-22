@@ -39,6 +39,14 @@ def skill(tmp_path, monkeypatch):
     s._settings = {}
     monkeypatch.setattr(GrimmTales, "lang", "en-us", raising=False)
     s.file_system = FakeFileSystem(tmp_path)
+    s.res_dir = str(Path(__file__).resolve().parents[1])  # repo root, holds locale/
+    s._lang_resources = {}  # OVOSSkill.resources' internal per-language cache
     s.index = {}
     s._story_text_cache = {}
+    # matches locale/en-us/collection.voc + collection_meta.json - most
+    # tests don't exercise _load_collection_meta() itself, they just
+    # need these pre-populated the way initialize() would leave them
+    s._collection_aliases = ["grimm", "the brothers grimm", "brothers grimm", "grimm brothers"]
+    s._author_name = "the Brothers Grimm"
+    s._collection_name = "Grimm's Fairy Tales"
     return s

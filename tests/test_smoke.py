@@ -29,11 +29,13 @@ def test_initialize_stays_inert_for_unsupported_language(skill, monkeypatch):
 def test_initialize_loads_normally_for_supported_language(skill, monkeypatch):
     monkeypatch.setattr(type(skill), "lang", "da-dk", raising=False)
     skill.refresh_index = MagicMock()
+    skill._load_collection_meta = MagicMock()
     skill.add_event = MagicMock()
 
     skill.initialize()
 
     skill.refresh_index.assert_called_once()
+    skill._load_collection_meta.assert_called_once()
     assert skill.add_event.call_count == 3
 
 
@@ -42,6 +44,7 @@ def test_initialize_loads_normally_for_portuguese(skill, monkeypatch):
     andlo/ovos-skill-fairytales#31 for the research behind this."""
     monkeypatch.setattr(type(skill), "lang", "pt-pt", raising=False)
     skill.refresh_index = MagicMock()
+    skill._load_collection_meta = MagicMock()
     skill.add_event = MagicMock()
 
     skill.initialize()

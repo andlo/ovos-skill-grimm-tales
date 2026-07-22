@@ -49,12 +49,13 @@ COMMON_READING_PING = "ovos.common_reading.ping"
 COMMON_READING_PONG = "ovos.common_reading.pong"
 
 # names a user might call this collection via 'collection_hint' - matched
-# fuzzily against, not required to be exact
-COLLECTION_ALIASES = ["grimm", "the brothers grimm", "brothers grimm", "grimm brothers"]
+# fuzzily against, not required to be exact. Loaded per-language from
+# locale/<lang>/collection.voc and collection_meta.json (see
+# _load_collection_meta below) rather than hardcoded here - "grimm" isn't
+# called the same thing in every one of the 8 languages this provider
+# supports (see ovos-common-reading-pipeline-plugin#26).
 COLLECTION_HINT_THRESHOLD = 0.85  # see ovos-common-reading-pipeline-plugin's README for why not lower
 CONTENT_TYPES = ["story", "tale"]
-AUTHOR_NAME = "the Brothers Grimm"
-COLLECTION_NAME = "Grimm's Fairy Tales"
 SOURCE_NAME = "grimmstories.com"
 
 # grimmstories.com offers 20 languages total; we only support the ones
@@ -95,10 +96,25 @@ class GrimmTales(OVOSSkill):
             return
         self.index = {}
         self._story_text_cache = {}
+        self._load_collection_meta()
         self.refresh_index()
         self.add_event(COMMON_READING_SEARCH, self.handle_search)
         self.add_event(f"{COMMON_READING_FETCH_CONTENT}.{self.skill_id}", self.handle_fetch_content)
         self.add_event(COMMON_READING_PING, self.handle_ping)
+
+    def _load_collection_meta(self):
+        """Loads collection_aliases/author_name/collection_name for the
+        CURRENT device language via OVOS's own resource file resolution
+        (self.resources) - not hardcoded English constants. This already
+        does distance-based language fallback (langcodes.tag_distance),
+        so e.g. a device on 'en-gb' correctly finds locale/en-us/ without
+        needing a dedicated en-gb folder. See
+        ovos-common-reading-pipeline-plugin#26 for the full reasoning."""
+        aliases_raw = self.resources.load_vocabulary_file("collection")
+        self._collection_aliases = [phrase for line in aliases_raw for phrase in line]
+        meta = self.resources.load_json_file("collection_meta.json")
+        self._author_name = meta["author"]
+        self._collection_name = meta["collection"]
 
     def _index_cache_filename(self):
         lang = self.lang.split("-")[0]
@@ -191,7 +207,7 @@ class GrimmTales(OVOSSkill):
     def _matches_collection_hint(self, hint):
         if not hint:
             return True
-        _, score = match_one(hint.lower(), COLLECTION_ALIASES)
+        _, score = match_one(hint.lower(), self._collection_aliases)
         return score >= COLLECTION_HINT_THRESHOLD
 
     def _matches_content_type(self, content_type):
@@ -224,8 +240,8 @@ class GrimmTales(OVOSSkill):
             "skill_id": self.skill_id,
             "content_id": title,
             "title": title,
-            "author": AUTHOR_NAME,
-            "collection": COLLECTION_NAME,
+            "author": self._author_name,
+            "collection": self._collection_name,
             "source": SOURCE_NAME,
             "confidence": confidence,
         }))
@@ -254,5 +270,5 @@ class GrimmTales(OVOSSkill):
         never registered it - which is exactly the right behavior."""
         self.bus.emit(message.reply(COMMON_READING_PONG, {
             "skill_id": self.skill_id,
-            "collection": COLLECTION_NAME,
+            "collection": self._collection_name,
         }))
