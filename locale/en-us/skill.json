@@ -9,9 +9,8 @@
   "description": "Brothers Grimm fairy tales provider for ovos-common-reading-pipeline-plugin. No standalone voice interface.",
   "examples": [
     "Tell me a story from grimm",
-    "Read me a fairy tale from the brothers grimm",
-    "Read me the story about cinderella",
-    "Tell me a grimm story"
+    "Tell me the story about cinderella",
+    "Can you tell me a fairy tale from the brothers grimm"
   ],
   "tags": [
     "entertainment",

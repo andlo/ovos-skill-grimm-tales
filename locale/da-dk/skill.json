@@ -9,7 +9,7 @@
   "description": "Brødrene Grimms eventyr, udbyder til ovos-common-reading-pipeline-plugin. Ingen selvstændig stemmegrænseflade.",
   "examples": [
     "Fortæl mig en historie fra grimm",
-    "Læs mig et eventyr fra grimm"
+    "Fortæl mig historien om askepot"
   ],
   "tags": [
     "entertainment",
