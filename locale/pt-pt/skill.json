@@ -7,7 +7,16 @@
   "author": "andlo",
   "name": "Contos de Grimm (fornecedor)",
   "description": "Contos dos Irmãos Grimm, fornecedor para ovos-common-reading-pipeline-plugin. Sem interface de voz autónoma.",
-  "examples": [],
-  "tags": ["entertainment", "stories", "fairytales", "grimm", "provider"],
+  "examples": [
+    "Conta-me uma história de grimm",
+    "Lê-me uma história de grimm"
+  ],
+  "tags": [
+    "entertainment",
+    "stories",
+    "fairytales",
+    "grimm",
+    "provider"
+  ],
   "icon": "https://raw.githubusercontent.com/andlo/ovos-skill-grimm-tales/main/story-512.png"
 }

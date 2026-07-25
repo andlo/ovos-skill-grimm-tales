@@ -7,7 +7,18 @@
   "author": "andlo",
   "name": "Grimm Tales (provider)",
   "description": "Brothers Grimm fairy tales provider for ovos-common-reading-pipeline-plugin. No standalone voice interface.",
-  "examples": [],
-  "tags": ["entertainment", "stories", "fairytales", "grimm", "provider"],
+  "examples": [
+    "Tell me a story from grimm",
+    "Read me a fairy tale from the brothers grimm",
+    "Read me the story about cinderella",
+    "Tell me a grimm story"
+  ],
+  "tags": [
+    "entertainment",
+    "stories",
+    "fairytales",
+    "grimm",
+    "provider"
+  ],
   "icon": "https://raw.githubusercontent.com/andlo/ovos-skill-grimm-tales/main/story-512.png"
 }

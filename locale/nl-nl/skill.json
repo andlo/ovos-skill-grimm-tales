@@ -7,7 +7,16 @@
   "author": "andlo",
   "name": "Grimm Sprookjes (aanbieder)",
   "description": "Sprookjes van de Gebroeders Grimm, aanbieder voor ovos-common-reading-pipeline-plugin. Geen zelfstandige spraakinterface.",
-  "examples": [],
-  "tags": ["entertainment", "stories", "fairytales", "grimm", "provider"],
+  "examples": [
+    "Vertel me een verhaal van grimm",
+    "Lees me een verhaal van grimm"
+  ],
+  "tags": [
+    "entertainment",
+    "stories",
+    "fairytales",
+    "grimm",
+    "provider"
+  ],
   "icon": "https://raw.githubusercontent.com/andlo/ovos-skill-grimm-tales/main/story-512.png"
 }
