@@ -14,8 +14,11 @@ def test_grimm_tales_is_an_ovos_skill():
     assert issubclass(GrimmTales, OVOSSkill)
 
 
-def test_initialize_stays_inert_for_unsupported_language(skill, monkeypatch):
-    monkeypatch.setattr(type(skill), "lang", "pl-pl", raising=False)
+def test_initialize_stays_inert_when_no_configured_language_is_supported(skill, monkeypatch):
+    """Never even build an index or register bus events when none of
+    the languages this installation is configured for (lang +
+    secondary_langs) is one this provider serves - it doesn't translate."""
+    monkeypatch.setattr(type(skill), "native_langs", ["pl-PL", "ja-JP"], raising=False)
     skill.refresh_index = MagicMock()
     skill.add_event = MagicMock()
 
@@ -23,44 +26,31 @@ def test_initialize_stays_inert_for_unsupported_language(skill, monkeypatch):
 
     skill.refresh_index.assert_not_called()
     skill.add_event.assert_not_called()
-    assert skill.index == {}
+    assert skill.served == set()
 
 
 def test_initialize_loads_normally_for_supported_language(skill, monkeypatch):
-    monkeypatch.setattr(type(skill), "lang", "da-dk", raising=False)
+    monkeypatch.setattr(type(skill), "native_langs", ["da-DK"], raising=False)
     skill.refresh_index = MagicMock()
     skill._load_collection_meta = MagicMock()
     skill.add_event = MagicMock()
 
     skill.initialize()
 
-    skill.refresh_index.assert_called_once()
-    skill._load_collection_meta.assert_called_once()
+    skill.refresh_index.assert_called_once_with(lang="da")
+    skill._load_collection_meta.assert_called_once_with("da")
     assert skill.add_event.call_count == 3
 
 
-def test_initialize_loads_normally_for_portuguese(skill, monkeypatch):
-    """Grimm-only language (no Andersen equivalent) - see
-    andlo/ovos-skill-fairytales#31 for the research behind this."""
-    monkeypatch.setattr(type(skill), "lang", "pt-pt", raising=False)
+def test_initialize_builds_an_index_per_configured_language(skill, monkeypatch):
+    """A HiveMind hub lists the languages its users speak in
+    secondary_langs: one index each, unsupported ones skipped."""
+    monkeypatch.setattr(type(skill), "native_langs", ["en-US", "da-DK", "pl-PL"], raising=False)
     skill.refresh_index = MagicMock()
     skill._load_collection_meta = MagicMock()
     skill.add_event = MagicMock()
 
     skill.initialize()
 
-    skill.refresh_index.assert_called_once()
-
-
-def test_update_index_uses_configured_language(skill, monkeypatch):
-    monkeypatch.setattr(type(skill), "lang", "pt-pt", raising=False)
-    requested_urls = []
-
-    def fake_get_index(url):
-        requested_urls.append(url)
-        return {}
-
-    skill.get_index = fake_get_index
-    skill.update_index()
-
-    assert requested_urls == ["https://www.grimmstories.com/pt/grimm_contos/list"]
+    assert skill.served == {"en", "da"}
+    assert sorted(c.kwargs["lang"] for c in skill.refresh_index.call_args_list) == ["da", "en"]

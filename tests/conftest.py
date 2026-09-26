@@ -38,6 +38,7 @@ def skill(tmp_path, monkeypatch):
     s._bus = MagicMock()
     s._settings = {}
     monkeypatch.setattr(GrimmTales, "lang", "en-us", raising=False)
+    s.served = {"en"}
     s.file_system = FakeFileSystem(tmp_path)
     s.res_dir = str(Path(__file__).resolve().parents[1])  # repo root, holds locale/
     s._lang_resources = {}  # OVOSSkill.resources' internal per-language cache

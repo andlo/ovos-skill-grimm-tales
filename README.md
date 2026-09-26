@@ -31,13 +31,30 @@ since they fall outside [OVOS's actively-tracked language set](https://openvoice
 Portuguese is Grimm-only among the 8 supported here - no equivalent
 Andersen source exists in Portuguese.
 
-**This provider does not translate.** On any other device language, it
-doesn't just decline to answer searches - it **never loads at all**:
-`initialize()` checks the device's language against `SUPPORTED_LANGUAGES`
-before building any index or registering any bus events, and logs a
-clear message if the language isn't supported, rather than silently
-serving English (or any other) content. Set your device to one of the 8
-supported languages to use this provider.
+**This provider does not translate.** It loads only for the languages
+the installation is configured for - the device's own `lang` plus
+`secondary_langs` in `mycroft.conf` - that it supports. If none of them
+is one of the 8, it **never loads at all**: `initialize()` builds no
+index, registers no bus events, and logs a clear message rather than
+silently serving English (or any other) content.
+
+For each configured, supported language it builds its own story index,
+and each search is answered from the index of the language it was made
+in: the pipeline plugin's `lang` field, else the language of the session
+the search came from, else the device's own. A single device builds one
+index, as before. A HiveMind hub serving users in several languages lists
+them in `secondary_langs`:
+
+```json
+{
+  "lang": "en-US",
+  "secondary_langs": ["da-DK", "de-DE"]
+}
+```
+
+A search in a language the installation doesn't serve gets no answer at
+all. A search with no title ("tell me a story") gets a random story at
+0.9, and titles match regardless of case.
 
 **Author/collection name and collection_hint aliases are also
 per-language**, not hardcoded English - "the Brothers Grimm" only makes

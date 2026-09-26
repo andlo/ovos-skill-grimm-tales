@@ -8,6 +8,7 @@ def make_message(data=None, msg_type="ovos.common_reading.search"):
     m = MagicMock()
     m.data = data or {}
     m.msg_type = msg_type
+    m.context = {}
     m.reply = MagicMock(side_effect=lambda mtype, d: MagicMock(msg_type=mtype, data=d))
     return m
 
@@ -53,10 +54,14 @@ def test_handle_search_surprise_me_with_matching_hint_and_no_phrase(skill):
     assert data["confidence"] == 1.0
 
 
-def test_handle_search_no_phrase_no_hint_stays_silent(skill):
-    skill.index = {"Cinderella": "http://x/cinderella"}
+def test_handle_search_no_phrase_no_hint_offers_a_random_story(skill):
+    """'tell me a story' names no title: a random one, confident enough
+    to be read without asking (the plugin asks below 0.8), but below a
+    named title's 1.0."""
+    skill.index = {"The Ugly Duckling": "http://x/duckling"}
     skill.handle_search(make_message({"phrase": None, "collection_hint": None}))
-    skill.bus.emit.assert_not_called()
+    skill.bus.emit.assert_called_once()
+    assert skill.bus.emit.call_args[0][0].data["confidence"] == 0.9
 
 
 def test_handle_search_stays_silent_for_mismatched_content_type(skill):
