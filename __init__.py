@@ -25,6 +25,7 @@ the pipeline plugin installed and configured to be useful.
 """
 
 from ovos_workshop.skills import OVOSSkill
+from ovos_bus_client.session import SessionManager
 from ovos_utils.parse import match_one
 from ovos_utils import classproperty
 from ovos_utils.process_utils import RuntimeRequirements
@@ -33,6 +34,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import json
+import os
 import random
 
 
@@ -63,9 +65,29 @@ SOURCE_NAME = "grimmstories.com"
 # andlo/ovos-skill-fairytales#31) - 7 shared with Andersen plus
 # Portuguese (Grimm-only, no Andersen stories exist in Portuguese). This
 # provider does NOT translate (unlike ovos-skill-ovosblog/
-# ovos-skill-arxiv-papers) - a device set to any other language gets no
-# response at all, decided once at load time (see initialize()).
+# ovos-skill-arxiv-papers) - it loads only for the configured languages
+# (lang + secondary_langs) it supports, and each request's language
+# picks the index that answers.
 SUPPORTED_LANGUAGES = {"da", "en", "de", "es", "fr", "it", "nl", "pt"}
+
+
+
+# 'tell me a story' names no title: answer with a random one, confident
+# enough to be read without an "is it that one?" round trip (the plugin
+# asks below 0.8) but below the 1.0 of a title somebody actually named -
+# the same value as ovos-skill-andrew-lang-tales/-bechstein/-cosquin
+RANDOM_STORY_CONFIDENCE = 0.9
+
+
+def primary_subtag(lang):
+    """'en-US', 'en_gb', 'EN' -> 'en'."""
+    return (lang or "").replace("_", "-").split("-")[0].lower()
+
+
+def configured_languages(langs):
+    """Primary subtags of the languages an installation is configured
+    for (core lang + secondary_langs): ['en-US', 'da-DK'] -> {'en', 'da'}."""
+    return {primary_subtag(lang) for lang in langs or [] if lang}
 
 
 class GrimmTales(OVOSSkill):
@@ -84,44 +106,125 @@ class GrimmTales(OVOSSkill):
         )
 
     def initialize(self):
-        lang = self.lang.split("-")[0]
-        if lang not in SUPPORTED_LANGUAGES:
+        # Loads only for the languages this installation is configured
+        # for - the device's own 'lang' plus 'secondary_langs' in
+        # mycroft.conf - that grimmstories.com also offers. A single device builds
+        # one index, as before; a HiveMind hub lists the languages its
+        # users speak in secondary_langs and gets an index for each. Each
+        # request's own language then picks which one answers.
+        self.served = configured_languages(self.native_langs) & SUPPORTED_LANGUAGES
+        self.indexes = {}  # 'da' -> {title: url}
+        self._meta = {}  # 'da' -> {"aliases": [...], "author": ..., "collection": ...}
+        # in-memory cache of already-fetched story text, keyed by URL
+        self._story_text_cache = {}
+        if not self.served:
             self.log.info(
-                f"{self.skill_id}: device language '{self.lang}' is not one of "
-                f"{sorted(SUPPORTED_LANGUAGES)} that grimmstories.com supports, "
-                f"and this provider does not translate - skill will stay inert "
+                f"{self.skill_id}: none of the configured languages "
+                f"{sorted(self.native_langs)} is one of "
+                f"{sorted(SUPPORTED_LANGUAGES)} that grimmstories.com supports, and "
+                f"this provider does not translate - skill will stay inert "
                 f"(no bus events registered, index not built)."
             )
-            self.index = {}
             return
-        self.index = {}
-        self._story_text_cache = {}
-        self._load_collection_meta()
-        self.refresh_index()
+        for lang in sorted(self.served):
+            self._load_collection_meta(lang)
+            self.refresh_index(lang=lang)
+        self.log.info(f"{self.skill_id}: serving {sorted(self.served)}")
         self.add_event(COMMON_READING_SEARCH, self.handle_search)
         self.add_event(f"{COMMON_READING_FETCH_CONTENT}.{self.skill_id}", self.handle_fetch_content)
         self.add_event(COMMON_READING_PING, self.handle_ping)
 
-    def _load_collection_meta(self):
-        """Loads collection_aliases/author_name/collection_name for the
-        CURRENT device language via OVOS's own resource file resolution
-        (self.resources) - not hardcoded English constants. This already
-        does distance-based language fallback (langcodes.tag_distance),
-        so e.g. a device on 'en-gb' correctly finds locale/en-us/ without
-        needing a dedicated en-gb folder. See
-        ovos-common-reading-pipeline-plugin#26 for the full reasoning."""
-        aliases_raw = self.resources.load_vocabulary_file("collection")
-        self._collection_aliases = [phrase for line in aliases_raw for phrase in line]
-        meta = self.resources.load_json_file("collection_meta.json")
-        self._author_name = meta["author"]
-        self._collection_name = meta["collection"]
+    # --- per-language state ------------------------------------------------
+    # index / _collection_aliases / _author_name / _collection_name are the
+    # view for the current language (self.lang, which ovos-workshop takes
+    # from the session of the message being handled). Handlers pass the
+    # request's language explicitly instead - see _request_lang().
 
-    def _index_cache_filename(self):
-        lang = self.lang.split("-")[0]
-        return f"index_{lang}.json"
+    def _default_lang(self):
+        return primary_subtag(self.lang)
 
-    def _read_index_cache(self):
-        cache_file = self._index_cache_filename()
+    def _meta_for(self, lang=None):
+        return self._state("_meta").setdefault(lang or self._default_lang(), {})
+
+    def _state(self, name):
+        if name not in self.__dict__:
+            self.__dict__[name] = {}
+        return self.__dict__[name]
+
+    @property
+    def index(self):
+        return self._state("indexes").get(self._default_lang(), {})
+
+    @index.setter
+    def index(self, value):
+        self._state("indexes")[self._default_lang()] = value
+
+    @property
+    def _collection_aliases(self):
+        return self._meta_for().get("aliases", [])
+
+    @_collection_aliases.setter
+    def _collection_aliases(self, value):
+        self._meta_for()["aliases"] = value
+
+    @property
+    def _author_name(self):
+        return self._meta_for().get("author")
+
+    @_author_name.setter
+    def _author_name(self, value):
+        self._meta_for()["author"] = value
+
+    @property
+    def _collection_name(self):
+        return self._meta_for().get("collection")
+
+    @_collection_name.setter
+    def _collection_name(self, value):
+        self._meta_for()["collection"] = value
+
+    def _locale_tag(self, lang):
+        """The locale/ folder for a primary subtag: 'da' -> 'da-dk'."""
+        for name in sorted(os.listdir(os.path.join(self.res_dir, "locale"))):
+            if primary_subtag(name) == lang:
+                return name
+        return lang
+
+    @staticmethod
+    def _request_lang(message):
+        """The language a request was made in, or None when it does not
+        say: the pipeline plugin's own 'lang' field first, then the
+        language of the session the request was forwarded from (a
+        HiveMind client's, on a hub). An older plugin sends neither."""
+        lang = message.data.get("lang") or message.context.get("lang")
+        if not lang and message.context.get("session"):
+            lang = SessionManager.get(message).lang
+        return lang or None
+
+    def _serves(self, lang):
+        return primary_subtag(lang) in getattr(self, "served", set())
+
+    def _load_collection_meta(self, lang=None):
+        """Loads collection_aliases/author_name/collection_name for one
+        language (default: the current one) from locale/<lang>/ via
+        OVOS's own resource file resolution - not hardcoded English
+        constants. See ovos-common-reading-pipeline-plugin#26."""
+        lang = lang or self._default_lang()
+        resources = self.resources if lang == self._default_lang() else \
+            self.load_lang(self.res_dir, self._locale_tag(lang))
+        aliases_raw = resources.load_vocabulary_file("collection")
+        meta = resources.load_json_file("collection_meta.json")
+        self._meta_for(lang).update({
+            "aliases": [phrase for line in aliases_raw for phrase in line],
+            "author": meta["author"],
+            "collection": meta["collection"],
+        })
+
+    def _index_cache_filename(self, lang=None):
+        return f"index_{lang or self._default_lang()}.json"
+
+    def _read_index_cache(self, lang=None):
+        cache_file = self._index_cache_filename(lang)
         if not self.file_system.exists(cache_file):
             return None
         try:
@@ -131,27 +234,30 @@ class GrimmTales(OVOSSkill):
             self.log.warning(f"could not read story index cache: {e}")
             return None
 
-    def _write_index_cache(self):
-        cache_file = self._index_cache_filename()
+    def _write_index_cache(self, lang=None):
+        cache_file = self._index_cache_filename(lang)
+        index = self._state("indexes").get(lang or self._default_lang(), {})
         try:
             with self.file_system.open(cache_file, "w") as f:
-                json.dump({"timestamp": time.time(), "index": self.index}, f)
+                json.dump({"timestamp": time.time(), "index": index}, f)
         except OSError as e:
             self.log.warning(f"could not write story index cache: {e}")
 
-    def refresh_index(self, force=False):
-        cached = self._read_index_cache()
+    def refresh_index(self, force=False, lang=None):
+        lang = lang or self._default_lang()
+        indexes = self._state("indexes")
+        cached = self._read_index_cache(lang)
         if not force and cached and (time.time() - cached.get("timestamp", 0)) < self.INDEX_CACHE_TTL:
-            self.index = cached.get("index", {})
+            indexes[lang] = cached.get("index", {})
             return
         try:
-            self.update_index()
-            self._write_index_cache()
+            indexes[lang] = self.update_index(lang)
+            self._write_index_cache(lang)
         except StoryFetchError as e:
-            self.log.error(f"Could not refresh story index: {e}")
+            self.log.error(f"Could not refresh story index ({lang}): {e}")
             if cached:
                 self.log.warning("Falling back to previously cached (possibly stale) story index")
-                self.index = cached.get("index", {})
+                indexes[lang] = cached.get("index", {})
 
     def get_soup(self, url):
         try:
@@ -190,9 +296,7 @@ class GrimmTales(OVOSSkill):
             index[link.text] = link.get("href")
         return index
 
-    def update_index(self):
-        # initialize() already checked self.lang is in SUPPORTED_LANGUAGES
-        # before this is ever called, so no fallback is needed here.
+    def update_index(self, lang=None):
         url_grimm = {'da': 'https://www.grimmstories.com/da/grimm_eventyr/',
                      'en': 'https://www.grimmstories.com/en/grimm_fairy-tales/',
                      'de': 'https://www.grimmstories.com/de/grimm_maerchen/',
@@ -201,13 +305,15 @@ class GrimmTales(OVOSSkill):
                      'it': 'https://www.grimmstories.com/it/grimm_fiabe/',
                      'nl': 'https://www.grimmstories.com/nl/grimm_sprookjes/',
                      'pt': 'https://www.grimmstories.com/pt/grimm_contos/'}
-        lang = self.lang.split("-")[0]
-        self.index = self.get_index(url_grimm[lang] + "list")
+        return self.get_index(url_grimm[lang or self._default_lang()] + "list")
 
-    def _matches_collection_hint(self, hint):
+    def _matches_collection_hint(self, hint, lang=None):
         if not hint:
             return True
-        _, score = match_one(hint.lower(), self._collection_aliases)
+        aliases = self._meta_for(lang).get("aliases", [])
+        if not aliases:
+            return False
+        _, score = match_one(hint.lower(), aliases)
         return score >= COLLECTION_HINT_THRESHOLD
 
     def _matches_content_type(self, content_type):
@@ -216,39 +322,59 @@ class GrimmTales(OVOSSkill):
         return content_type.lower() in CONTENT_TYPES
 
     def handle_search(self, message):
-        if not self.index:
+        # the language this search was made in - a search in a language
+        # this installation doesn't serve gets no answer at all, not an
+        # empty one. With no language on the request (an older plugin),
+        # the device's own language decides, as it always did.
+        lang = primary_subtag(self._request_lang(message) or self.lang)
+        if not self._serves(lang):
             return
+        index = self._state("indexes").get(lang)
+        if not index:
+            return
+        meta = self._meta_for(lang)
         collection_hint = message.data.get("collection_hint")
-        if not self._matches_collection_hint(collection_hint):
+        if not self._matches_collection_hint(collection_hint, lang):
             return  # this search isn't aimed at us - stay silent
         content_type = message.data.get("content_type")
         if not self._matches_content_type(content_type):
             return  # asking for a kind of content we don't offer
 
-        phrase = message.data.get("phrase")
+        phrase = (message.data.get("phrase") or "").strip()
         if phrase:
-            title, confidence = match_one(phrase, list(self.index.keys()))
-        elif collection_hint:
-            # 'a story from Grimm' with no specific tale named - only a
-            # sensible response if the hint was actually for us
-            title = random.choice(list(self.index.keys()))
-            confidence = 1.0
+            # titles keep their case ('The Ugly Duckling'), requests
+            # rarely do - compare both lower case
+            by_lower = {title.lower(): title for title in index}
+            match, confidence = match_one(phrase.lower(), list(by_lower))
+            title = by_lower[match]
         else:
-            return  # no phrase and no hint - nothing to go on
+            # no title asked for: 'tell me a story', or 'a story from
+            # <collection>' - a random one, fully confident only when the
+            # collection itself was named
+            title = random.choice(list(index.keys()))
+            confidence = 1.0 if collection_hint else RANDOM_STORY_CONFIDENCE
 
         self.bus.emit(message.reply(COMMON_READING_SEARCH_RESPONSE, {
             "skill_id": self.skill_id,
             "content_id": title,
             "title": title,
-            "author": self._author_name,
-            "collection": self._collection_name,
+            "author": meta.get("author"),
+            "collection": meta.get("collection"),
             "source": SOURCE_NAME,
             "confidence": confidence,
         }))
 
     def handle_fetch_content(self, message):
         content_id = message.data.get("content_id")
-        url = self.index.get(content_id)
+        # never gated on language: it is addressed to this provider by id.
+        # Look in the request's language first, then in every other one.
+        indexes = self._state("indexes")
+        first = primary_subtag(self._request_lang(message) or self.lang)
+        url = None
+        for lang in [first] + sorted(set(indexes) - {first}):
+            url = indexes.get(lang, {}).get(content_id)
+            if url:
+                break
         if not url:
             self.bus.emit(message.reply(COMMON_READING_FETCH_CONTENT_RESPONSE, {"paragraphs": []}))
             return
@@ -265,10 +391,15 @@ class GrimmTales(OVOSSkill):
         """Cheap 'is anyone there?' reply - no index lookup. Only ever
         called by the pipeline plugin on its rare 0-candidates path
         (see ovos-common-reading-pipeline-plugin#2), never on every
-        search. A device with an unsupported language never reaches
-        this handler at all, since initialize() returned early and
-        never registered it - which is exactly the right behavior."""
+        search. A ping that says which language it is asking for (its
+        'lang' field or the session it was forwarded from) only gets a
+        pong when this installation serves that language. An
+        installation serving none never registered this handler."""
+        lang = self._request_lang(message)
+        if lang and not self._serves(lang):
+            return
+        meta = self._meta_for(primary_subtag(lang) if lang else None)
         self.bus.emit(message.reply(COMMON_READING_PONG, {
             "skill_id": self.skill_id,
-            "collection": self._collection_name,
+            "collection": meta.get("collection"),
         }))

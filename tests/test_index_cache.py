@@ -11,7 +11,7 @@ def test_refresh_index_uses_fresh_cache_without_scraping(skill):
     (skill.file_system.base / cache_file).write_text(
         json.dumps({"timestamp": time.time(), "index": {"Cached Tale": "http://x/cached"}})
     )
-    skill.update_index = lambda: (_ for _ in ()).throw(AssertionError("should not scrape when cache is fresh"))
+    skill.update_index = lambda lang=None: (_ for _ in ()).throw(AssertionError("should not scrape when cache is fresh"))
 
     skill.refresh_index()
 
@@ -25,7 +25,7 @@ def test_refresh_index_falls_back_to_stale_cache_on_scrape_failure(skill):
         json.dumps({"timestamp": stale_timestamp, "index": {"Old Tale": "http://x/old"}})
     )
 
-    def fail():
+    def fail(lang=None):
         raise StoryFetchError("network down")
     skill.update_index = fail
 
@@ -35,7 +35,7 @@ def test_refresh_index_falls_back_to_stale_cache_on_scrape_failure(skill):
 
 
 def test_refresh_index_writes_cache_after_successful_scrape(skill):
-    skill.update_index = lambda: setattr(skill, "index", {"Fresh Tale": "http://x/fresh"})
+    skill.update_index = lambda lang=None: {"Fresh Tale": "http://x/fresh"}
 
     skill.refresh_index()
 
