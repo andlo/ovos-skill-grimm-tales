@@ -38,6 +38,46 @@ import os
 import random
 
 
+def _user_agent():
+    """Say who is asking. Some sites answer python-requests' default
+    User-Agent with 403 (365tomorrows.com behind Cloudflare does), and a
+    descriptive one is what sites ask automated clients to send."""
+    try:
+        from importlib.metadata import version
+        ver = version("ovos-skill-grimm-tales")
+    except Exception:
+        ver = "unknown"
+    return f"ovos-skill-grimm-tales/{ver} (+https://github.com/andlo/ovos-skill-grimm-tales)"
+
+
+HTTP_HEADERS = {"User-Agent": _user_agent()}
+
+
+LINE_BREAK = "\u2028"  # stands in for <br> while the text is collected
+
+
+def story_paragraphs(container):
+    """The paragraphs of a story, as grimmstories.com marks them up: each one is
+    its own <div class="s"> inside the story's text div, and the lines of
+    a verse are separated by <br>. Taking the div's .text instead ran the
+    whole story into one paragraph (so no pause between paragraphs) and
+    ran each verse's lines together. Whitespace inside a line is
+    collapsed; a verse keeps one line per line. A page without those
+    divs is read as a single paragraph, as before."""
+    blocks = container.find_all("div", class_="s", recursive=False) or [container]
+    paragraphs = []
+    for block in blocks:
+        # a <br> is a line break; a newline in the page source is just
+        # whitespace (the site hard-wraps some paragraphs)
+        for br in block.find_all("br"):
+            br.replace_with(LINE_BREAK)
+        lines = (" ".join(line.split()) for line in block.get_text().split(LINE_BREAK))
+        text = "\n".join(line for line in lines if line)
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+
 class StoryFetchError(Exception):
     """Raised when a story/index page could not be fetched or parsed
     from grimmstories.com."""
@@ -261,7 +301,7 @@ class GrimmTales(OVOSSkill):
 
     def get_soup(self, url):
         try:
-            r = requests.get(url, timeout=10)
+            r = requests.get(url, timeout=10, headers=HTTP_HEADERS)
             r.raise_for_status()
             r.encoding = r.apparent_encoding
             return BeautifulSoup(r.text, "html.parser")
@@ -275,7 +315,9 @@ class GrimmTales(OVOSSkill):
         elements = soup.find_all("div", {'itemprop': ['text']})
         if not elements:
             raise StoryFetchError(f"story text not found at {url}")
-        text = elements[0].text.strip()
+        text = "\n\n".join(story_paragraphs(elements[0]))
+        if not text:
+            raise StoryFetchError(f"story text is empty at {url}")
         self._story_text_cache[url] = text
         return text
 
