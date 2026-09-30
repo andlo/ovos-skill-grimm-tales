@@ -42,6 +42,7 @@ def skill(tmp_path, monkeypatch):
     s.file_system = FakeFileSystem(tmp_path)
     s.res_dir = str(Path(__file__).resolve().parents[1])  # repo root, holds locale/
     s._lang_resources = {}  # OVOSSkill.resources' internal per-language cache
+    s._auto_register_entity_files = lambda *a, **k: None  # ovos-workshop >= 9.8 needs attributes __new__() bypasses
     s.index = {}
     s._story_text_cache = {}
     # matches locale/en-us/collection.voc + collection_meta.json - most

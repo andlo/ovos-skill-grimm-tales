@@ -39,7 +39,7 @@ def test_initialize_loads_normally_for_supported_language(skill, monkeypatch):
 
     skill.refresh_index.assert_called_once_with(lang="da")
     skill._load_collection_meta.assert_called_once_with("da")
-    assert skill.add_event.call_count == 3
+    assert skill.add_event.call_count == 4  # search, fetch, ping, vocabulary.get
 
 
 def test_initialize_builds_an_index_per_configured_language(skill, monkeypatch):
